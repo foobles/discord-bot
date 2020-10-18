@@ -1,3 +1,4 @@
 /target
 /.idea
-bot.json
+/bot.json
+/markov.dat

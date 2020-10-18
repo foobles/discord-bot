@@ -1,7 +1,7 @@
 use crate::strings::StrCow;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Copy, Clone, Debug, Eq)]
 pub struct Token<S: AsRef<str>>(pub S);
 pub type TokenRef<'a> = Token<&'a str>;
 pub type TokenBuf = Token<String>;
@@ -20,7 +20,13 @@ impl<S: AsRef<str>> Token<S> {
     }
 }
 
-#[derive(Serialize, Deserialize, Copy, Clone, Debug, Eq, PartialEq)]
+impl<S: AsRef<str>, R: AsRef<str>> PartialEq<Token<R>> for Token<S> {
+    fn eq(&self, other: &Token<R>) -> bool {
+        self.0.as_ref() == other.0.as_ref()
+    }
+}
+
+#[derive(Serialize, Deserialize, Copy, Clone, Debug, Eq)]
 pub struct Id<S: AsRef<str>>(pub S);
 pub type IdRef<'a> = Id<&'a str>;
 pub type IdBuf = Id<String>;
@@ -36,6 +42,12 @@ where
 impl<S: AsRef<str>> Id<S> {
     pub fn as_ref(&self) -> IdRef {
         Id(self.0.as_ref())
+    }
+}
+
+impl<S: AsRef<str>, R: AsRef<str>> PartialEq<Id<R>> for Id<S> {
+    fn eq(&self, other: &Id<R>) -> bool {
+        self.0.as_ref() == other.0.as_ref()
     }
 }
 
