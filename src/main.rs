@@ -42,16 +42,18 @@ impl Handler<'_> {
 
     async fn save(&self, client: &Client, channel: IdRef<'_>) -> Result<()> {
         let result = save_markov(self.markov);
+        let msg = match &result {
+            Ok(s) => format!("Successfully saved ({})", file_size_to_string(*s)),
+            Err(_) => String::from("Error saving :("),
+        };
         client
             .create_message(
                 channel,
-                match &result {
-                    Ok(_) => "Successfully saved!",
-                    Err(_) => "Error saving :(",
-                },
+                &msg
+
             )
             .await?;
-        result
+        result.and(Ok(()))
     }
 
     async fn handle_wot(&mut self, client: &Client, message: &Message<'_>) -> Result<()> {
@@ -139,8 +141,22 @@ impl Handler<'_> {
     }
 }
 
-fn save_markov(markov: &Markov) -> Result<()> {
-    Ok(File::create("markov.dat")?.write_all(&bincode::serialize(markov)?)?)
+fn save_markov(markov: &Markov) -> Result<u64> {
+    let mut file = File::create("markov.dat")?;
+    file.write_all(&bincode::serialize(markov)?)?;
+    Ok(file.metadata()?.len())
+}
+
+fn file_size_to_string(size: u64) -> String {
+    let mut size_f = size as f64;
+    let suffixes = ["bytes", "kb", "mb", "gb", "tb"];
+    for s in suffixes.iter() {
+        if size_f / 1024.0 < 1.0 {
+            return format!("{:.2}{}", size_f, s);
+        }
+        size_f /= 1024.0;
+    }
+    String::from("way too fricken big file!")
 }
 
 impl bot::AsyncDispatchHandler for Handler<'_> {
