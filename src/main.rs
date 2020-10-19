@@ -86,6 +86,49 @@ impl Handler<'_> {
             .await
     }
 
+    async fn clean(&mut self, client: &Client, message: &Message<'_>) -> Result<()> {
+        if self
+            .cfg
+            .admins
+            .iter()
+            .any(|admin| *admin == message.author.id)
+        {
+            let removed = self.markov.clean(2);
+            client
+                .create_message(message.channel_id, &format!("Removed {} entries", removed))
+                .await
+        } else {
+            client
+                .create_message(
+                    message.channel_id,
+                    "Watch it, string bean. You aren't an admin",
+                )
+                .await
+        }
+    }
+
+    async fn what_follows(
+        &mut self,
+        client: &Client,
+        channel: IdRef<'_>,
+        word: &str,
+    ) -> Result<()> {
+        let follows = self.markov.what_follows(word);
+        if follows.is_empty() {
+            client.create_message(channel, "Nothing does!").await
+        } else {
+            client
+                .create_message(
+                    channel,
+                    follows
+                        .into_iter()
+                        .fold(String::new(), |p, c| p + &c + "\n")
+                        .as_str(),
+                )
+                .await
+        }
+    }
+
     fn remember(&mut self, string: &str) {
         self.markov.insert_sequence(
             string
@@ -116,6 +159,14 @@ impl bot::AsyncDispatchHandler for Handler<'_> {
                             "eg!mimic" => self.mimic(client, message.channel_id).await?,
                             "eg!save" => self.save(client, message.channel_id).await?,
                             "eg!debug" => eprintln!("{:#?}", self.markov),
+                            s if s.starts_with("eg!follows ") => {
+                                self.what_follows(
+                                    client,
+                                    message.channel_id,
+                                    message.content.as_str()[11..].trim(),
+                                )
+                                .await?
+                            }
                             s if !self
                                 .cfg
                                 .channel_blacklist

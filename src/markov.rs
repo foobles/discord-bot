@@ -2,6 +2,7 @@ use rand::distributions::{WeightedError, WeightedIndex};
 use rand::{distributions::Distribution, Rng};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::{Entry as HashEntry, HashMap};
+use std::collections::HashSet;
 use std::convert::TryFrom;
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Hash, Clone)]
@@ -44,8 +45,24 @@ impl Entry {
             }
         }
         self.weight_pairs.push((new_word, 1));
-        self.dist = WeightedIndex::new(self.weight_pairs.iter().map(|(_, w)| *w))
+        self.dist = self
+            .gen_new_weights()
             .expect("dist with added word should be valid");
+    }
+
+    fn clean(mut self, threshold: usize) -> (Option<Self>, usize) {
+        let old_size = self.weight_pairs.len();
+        self.weight_pairs.retain(|(_, w)| *w >= threshold);
+        self.dist = match self.gen_new_weights() {
+            Ok(d) => d,
+            Err(_) => return (None, old_size),
+        };
+        let removed = old_size - self.weight_pairs.len();
+        (Some(self), removed)
+    }
+
+    fn gen_new_weights(&self) -> Result<WeightedIndex<usize>, WeightedError> {
+        WeightedIndex::new(self.weight_pairs.iter().map(|(_, w)| *w))
     }
 }
 
@@ -112,6 +129,34 @@ impl Markov {
             cur_words: START_WORDS,
             rng,
         }
+    }
+
+    pub fn clean(&mut self, threshold: usize) -> usize {
+        let mut sum = 0;
+        self.entries = self
+            .entries
+            .drain()
+            .filter_map(|(k, e)| {
+                let (cleaned, removed) = e.clean(threshold);
+                sum += removed;
+                cleaned.map(|c| (k, c))
+            })
+            .collect();
+        sum
+    }
+
+    pub fn what_follows(&self, word: &str) -> HashSet<String> {
+        let word = Word::Word(word.into());
+        self.entries
+            .iter()
+            .filter_map(|([_, snd], e)| if *snd == word { Some(e) } else { None })
+            .flat_map(|e| {
+                e.weight_pairs.iter().filter_map(|(word, _)| match word {
+                    Word::Word(w) => Some(w.clone()),
+                    _ => None,
+                })
+            })
+            .collect()
     }
 }
 
