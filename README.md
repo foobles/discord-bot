@@ -9,6 +9,10 @@ You will need a `src/bot.json` file with these contents:
   "channel_blacklist": [
     "id_of_channel_bot_will_not_learn_from", 
     "another_id"
+  ],
+  "announcement_channels": [
+    "id_of_channel_bot_will_send_announcements",
+    "another_id"
   ]
 }
 ```

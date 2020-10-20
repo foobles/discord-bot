@@ -50,17 +50,6 @@ impl Entry {
             .expect("dist with added word should be valid");
     }
 
-    fn clean(mut self, threshold: usize) -> (Option<Self>, usize) {
-        let old_size = self.weight_pairs.len();
-        self.weight_pairs.retain(|(_, w)| *w >= threshold);
-        self.dist = match self.gen_new_weights() {
-            Ok(d) => d,
-            Err(_) => return (None, old_size),
-        };
-        let removed = old_size - self.weight_pairs.len();
-        (Some(self), removed)
-    }
-
     fn gen_new_weights(&self) -> Result<WeightedIndex<usize>, WeightedError> {
         WeightedIndex::new(self.weight_pairs.iter().map(|(_, w)| *w))
     }
@@ -131,18 +120,46 @@ impl Markov {
         }
     }
 
-    pub fn clean(&mut self, threshold: usize) -> usize {
-        let mut sum = 0;
-        self.entries = self
-            .entries
-            .drain()
-            .filter_map(|(k, e)| {
-                let (cleaned, removed) = e.clean(threshold);
-                sum += removed;
-                cleaned.map(|c| (k, c))
-            })
-            .collect();
-        sum
+    pub fn clean(&mut self) -> usize {
+        let old_len = self.entries.len();
+
+        let mut to_remove = Vec::new();
+
+        if let Some(start) = self.entries.get_mut(&START_WORDS) {
+            start.weight_pairs.retain(|(word, weight)| {
+                if *weight <= 1 {
+                    to_remove.push(word.clone());
+                    false
+                } else {
+                    true
+                }
+            });
+            start.dist = start.gen_new_weights().unwrap();
+        }
+        for k in to_remove {
+            self.entries.remove(&[Word::Start, k]);
+        }
+
+        let visited = {
+            let mut visited = HashSet::new();
+            let mut to_visit = vec![START_WORDS];
+            while let Some(key) = to_visit.pop() {
+                let entry = match self.entries.get(&key) {
+                    Some(e) => e,
+                    None => continue,
+                };
+                if visited.insert(entry as *const _) {
+                    for (word, _) in &entry.weight_pairs {
+                        to_visit.push([key[1].clone(), word.clone()])
+                    }
+                }
+            }
+            visited
+        };
+
+        self.entries
+            .retain(|_, v| visited.contains(&(v as *const _)));
+        old_len - self.entries.len()
     }
 
     pub fn what_follows(&self, word: &str) -> HashSet<String> {
@@ -153,6 +170,19 @@ impl Markov {
             .flat_map(|e| {
                 e.weight_pairs.iter().filter_map(|(word, _)| match word {
                     Word::Word(w) => Some(w.clone()),
+                    _ => None,
+                })
+            })
+            .collect()
+    }
+
+    pub fn what_starts(&self) -> HashSet<String> {
+        self.entries
+            .get(&START_WORDS)
+            .into_iter()
+            .flat_map(|e| {
+                e.weight_pairs.iter().filter_map(|(word, _)| match word {
+                    Word::Word(s) => Some(s.clone()),
                     _ => None,
                 })
             })

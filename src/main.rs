@@ -77,13 +77,8 @@ impl Handler<'_> {
     }
 
     async fn clean(&mut self, client: &Client, message: &Message<'_>) -> Result<()> {
-        if self
-            .cfg
-            .admins
-            .iter()
-            .any(|admin| *admin == message.author.id)
-        {
-            let removed = self.markov.clean(2);
+        if self.is_admin_message(message) {
+            let removed = self.markov.clean();
             client
                 .create_message(message.channel_id, &format!("Removed {} entries", removed))
                 .await
@@ -119,6 +114,23 @@ impl Handler<'_> {
         }
     }
 
+    async fn what_starts(&mut self, client: &Client, channel: IdRef<'_>) -> Result<()> {
+        let starts = self.markov.what_starts();
+        if starts.is_empty() {
+            client.create_message(channel, "Nothing does!").await
+        } else {
+            client
+                .create_message(
+                    channel,
+                    starts
+                        .into_iter()
+                        .fold(String::new(), |p, c| p + &c + "\n")
+                        .as_str(),
+                )
+                .await
+        }
+    }
+
     fn remember(&mut self, message: &Message<'_>) {
         self.markov
             .insert_sequence(message.content.as_str().split_whitespace().filter_map(|s| {
@@ -138,6 +150,13 @@ impl Handler<'_> {
                     None
                 }
             }))
+    }
+
+    fn is_admin_message(&self, message: &Message<'_>) -> bool {
+        self.cfg
+            .admins
+            .iter()
+            .any(|admin| *admin == message.author.id)
     }
 }
 
@@ -175,6 +194,8 @@ impl bot::AsyncDispatchHandler for Handler<'_> {
                             "eg!mimic" => self.mimic(client, message.channel_id).await?,
                             "eg!save" => self.save(client, message.channel_id).await?,
                             "eg!debug" => eprintln!("{:#?}", self.markov),
+                            "eg!starts" => self.what_starts(client, message.channel_id).await?,
+                            "eg!clean" => self.clean(client, &message).await?,
                             s if s.starts_with("eg!follows ") => {
                                 self.what_follows(
                                     client,
@@ -198,6 +219,11 @@ impl bot::AsyncDispatchHandler for Handler<'_> {
                 }
                 DispatchPayload::Ready(ready) => {
                     self.id = Some(ready.user.id.into_owned());
+                    for chan in &self.cfg.announcement_channels {
+                        client
+                            .create_message(chan.as_ref(), "Dispenser goin' up!")
+                            .await?;
+                    }
                     Ok(())
                 }
                 _ => Ok(()),
@@ -212,6 +238,7 @@ struct BotConfig {
     intents: Intents,
     admins: Vec<IdBuf>,
     channel_blacklist: Vec<IdBuf>,
+    announcement_channels: Vec<IdBuf>,
 }
 
 fn run(markov: &mut Markov) -> Result<()> {
