@@ -77,6 +77,9 @@ pub struct Message<'a> {
 
     #[serde(borrow)]
     pub author: User<'a>,
+
+    #[serde(borrow)]
+    pub mentions: Vec<User<'a>>,
 }
 
 #[derive(Serialize, Deserialize, Copy, Clone)]
@@ -131,9 +134,9 @@ impl From<Intent> for Intents {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Member<'a> {
     #[serde(borrow)]
-    user: Option<User<'a>>,
+    pub user: Option<User<'a>>,
     #[serde(borrow)]
-    nick: Option<StrCow<'a>>,
+    pub nick: Option<StrCow<'a>>,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -141,4 +144,5 @@ pub struct User<'a> {
     #[serde(borrow)]
     pub id: IdRef<'a>,
     pub username: &'a str, // might need Cow
+    pub discriminator: &'a str,
 }

@@ -46,13 +46,7 @@ impl Handler<'_> {
             Ok(s) => format!("Successfully saved ({})", file_size_to_string(*s)),
             Err(_) => String::from("Error saving :("),
         };
-        client
-            .create_message(
-                channel,
-                &msg
-
-            )
-            .await?;
+        client.create_message(channel, &msg).await?;
         result.and(Ok(()))
     }
 
@@ -76,13 +70,7 @@ impl Handler<'_> {
                 channel,
                 self.markov
                     .generate_sequence(&mut self.rng)
-                    .fold(String::new(), |p, c| {
-                        if c.starts_with('@') {
-                            format!("{}`{}` ", p, c)
-                        } else {
-                            p + &c + " "
-                        }
-                    })
+                    .fold(String::new(), |p, c| p + &c + " ")
                     .as_str(),
             )
             .await
@@ -131,13 +119,25 @@ impl Handler<'_> {
         }
     }
 
-    fn remember(&mut self, string: &str) {
-        self.markov.insert_sequence(
-            string
-                .split_whitespace()
-                .filter(|s| !s.is_empty())
-                .map(String::from),
-        )
+    fn remember(&mut self, message: &Message<'_>) {
+        self.markov
+            .insert_sequence(message.content.as_str().split_whitespace().filter_map(|s| {
+                if !s.is_empty() {
+                    if let Some(id) = s.strip_prefix("<@!").and_then(|s| s.strip_suffix('>')) {
+                        let id = Id(id);
+                        for user in &message.mentions {
+                            if user.id == id {
+                                return Some(format!("`{}#{}`", user.username, user.discriminator));
+                            }
+                        }
+                        Some(format!("`<@!{}>`", id.0))
+                    } else {
+                        Some(String::from(s))
+                    }
+                } else {
+                    None
+                }
+            }))
     }
 }
 
@@ -183,13 +183,13 @@ impl bot::AsyncDispatchHandler for Handler<'_> {
                                 )
                                 .await?
                             }
-                            s if !self
+                            _ if !self
                                 .cfg
                                 .channel_blacklist
                                 .iter()
                                 .any(|c| *c == message.channel_id) =>
                             {
-                                self.remember(s);
+                                self.remember(&message);
                             }
                             _ => (),
                         }
