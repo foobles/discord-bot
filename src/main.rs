@@ -263,7 +263,8 @@ fn main() {
         })
         .unwrap_or_else(|_| Markov::new());
 
-    if let Err(e) = run(&mut markov) {
+    while let Err(e) = run(&mut markov) {
+        save_markov(&markov).unwrap();
         for cause in e.chain() {
             println!("{}", cause);
         }
