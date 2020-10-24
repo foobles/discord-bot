@@ -71,7 +71,7 @@ pub mod command {
     #[derive(Serialize)]
     pub struct Resume {
         pub token: TokenBuf,
-        pub session_id: IdBuf,
+        pub session_id: String,
         pub seq: Sequence,
     }
 
@@ -126,22 +126,14 @@ pub mod event {
     pub struct Ready<'a> {
         #[serde(borrow)]
         pub user: User<'a>,
-
-        #[serde(borrow)]
-        pub session_id: IdRef<'a>,
+        pub session_id: &'a str,
     }
 
     #[derive(Deserialize, Debug)]
     pub struct TypingStart<'a> {
-        #[serde(borrow)]
-        channel_id: IdRef<'a>,
-
-        #[serde(borrow)]
-        guild_id: Option<IdRef<'a>>,
-
-        #[serde(borrow)]
-        user_id: IdRef<'a>,
-
+        channel_id: Id,
+        guild_id: Option<Id>,
+        user_id: Id,
         timestamp: i32,
 
         #[serde(borrow)]

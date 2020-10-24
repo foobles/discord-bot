@@ -1,53 +1,73 @@
 use crate::strings::StrCow;
-use serde::{Deserialize, Serialize};
+use serde::{de::Error, Deserialize, Deserializer, Serialize};
+use std::fmt::{Display, Formatter};
+use std::ops::Deref;
+use std::str::FromStr;
 
-#[derive(Serialize, Deserialize, Copy, Clone, Debug, Eq)]
-pub struct Token<S: AsRef<str>>(pub S);
-pub type TokenRef<'a> = Token<&'a str>;
-pub type TokenBuf = Token<String>;
-impl<S: AsRef<str> + ToOwned + ?Sized> Token<&S>
-where
-    S::Owned: AsRef<str>,
-{
-    pub fn into_owned(self) -> Token<S::Owned> {
-        Token(self.0.to_owned())
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct TokenBuf(String);
+
+impl<T: Into<String>> From<T> for TokenBuf {
+    fn from(s: T) -> Self {
+        TokenBuf(s.into())
     }
 }
 
-impl<S: AsRef<str>> Token<S> {
-    pub fn as_ref(&self) -> TokenRef {
-        Token(self.0.as_ref())
+impl Deref for TokenBuf {
+    type Target = Token;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*(self.0.as_str() as *const str as *const Token) }
     }
 }
 
-impl<S: AsRef<str>, R: AsRef<str>> PartialEq<Token<R>> for Token<S> {
-    fn eq(&self, other: &Token<R>) -> bool {
-        self.0.as_ref() == other.0.as_ref()
+#[derive(Serialize, Debug, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct Token(str);
+
+impl Token {
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
-#[derive(Serialize, Deserialize, Copy, Clone, Debug, Eq)]
-pub struct Id<S: AsRef<str>>(pub S);
-pub type IdRef<'a> = Id<&'a str>;
-pub type IdBuf = Id<String>;
-impl<S: AsRef<str> + ToOwned + ?Sized> Id<&S>
-where
-    S::Owned: AsRef<str>,
-{
-    pub fn into_owned(self) -> Id<S::Owned> {
-        Id(self.0.to_owned())
+impl Display for Token {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
-impl<S: AsRef<str>> Id<S> {
-    pub fn as_ref(&self) -> IdRef {
-        Id(self.0.as_ref())
+#[derive(Serialize, Copy, Clone, Debug, PartialEq, Eq)]
+#[serde(into = "String")]
+pub struct Id(u64);
+
+impl<'de> Deserialize<'de> for Id {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        StrCow::deserialize(deserializer)
+            .and_then(|s| Ok(Id(s.as_str().parse().map_err(D::Error::custom)?)))
     }
 }
 
-impl<S: AsRef<str>, R: AsRef<str>> PartialEq<Id<R>> for Id<S> {
-    fn eq(&self, other: &Id<R>) -> bool {
-        self.0.as_ref() == other.0.as_ref()
+impl FromStr for Id {
+    type Err = <u64 as FromStr>::Err;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Id(s.parse()?))
+    }
+}
+
+impl From<Id> for String {
+    fn from(id: Id) -> Self {
+        id.0.to_string()
+    }
+}
+
+impl Display for Id {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&String::from(*self))
     }
 }
 
@@ -69,11 +89,8 @@ pub struct Message<'a> {
     #[serde(borrow)]
     pub content: StrCow<'a>,
 
-    #[serde(borrow)]
-    pub id: IdRef<'a>,
-
-    #[serde(borrow)]
-    pub channel_id: IdRef<'a>,
+    pub id: Id,
+    pub channel_id: Id,
 
     #[serde(borrow)]
     pub author: User<'a>,
@@ -141,8 +158,7 @@ pub struct Member<'a> {
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct User<'a> {
-    #[serde(borrow)]
-    pub id: IdRef<'a>,
+    pub id: Id,
     pub username: &'a str, // might need Cow
     pub discriminator: &'a str,
 }

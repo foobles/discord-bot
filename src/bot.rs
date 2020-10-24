@@ -56,7 +56,7 @@ pub struct Bot {
 impl Bot {
     pub fn new(auth: TokenBuf, intents: Intents) -> Self {
         Bot {
-            client: Client::new(auth.as_ref()),
+            client: Client::new(&auth),
             auth,
             intents,
         }
@@ -113,17 +113,18 @@ impl Bot {
 
         let heartbeat_interval = expect_message_or_bail!(ws, h = Hello => h.heartbeat_interval);
         let (seq, session_id) = expect_message_or_bail!(ws,
-        d = Dispatch => match &d.payload {
-            DispatchPayload::Ready(ready) => {
-                let r = (d.seq, ready.session_id.into_owned());
-                handler.handle_message(d.payload, &self.client).await?;
-                r
-            },
-            p => bail!(
-                "dispatch payload expected to be Ready, got discriminant {:?}",
-                std::mem::discriminant(&p)
-            ),
-        });
+            d = Dispatch => match &d.payload {
+                    DispatchPayload::Ready(ready) => {
+                        let r = (d.seq, String::from(ready.session_id));
+                        handler.handle_message(d.payload, &self.client).await?;
+                        r
+                    },
+                p => bail!(
+                    "dispatch payload expected to be Ready, got discriminant {:?}",
+                    std::mem::discriminant(&p)
+                ),
+            }
+        );
 
         Ok(State {
             seq,
@@ -251,7 +252,7 @@ impl<T: AsyncDispatchHandler> AsyncDispatchHandler for &'_ mut T {
 struct State {
     seq: Sequence,
     heartbeat_interval: u64,
-    session_id: IdBuf,
+    session_id: String,
     heartbeat_acked: bool,
 }
 

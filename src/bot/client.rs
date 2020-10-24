@@ -4,7 +4,7 @@ use isahc::HttpClientBuilder;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::bot::types::{IdRef, Token};
+use crate::bot::types::*;
 
 pub struct Client {
     pub(super) http: isahc::HttpClient,
@@ -13,11 +13,11 @@ pub struct Client {
 impl Client {
     const DISCORD_ROOT: &'static str = "https://discord.com/api/";
 
-    pub fn new(auth: Token<impl AsRef<str>>) -> Self {
+    pub fn new(auth: &Token) -> Self {
         Client {
             http: HttpClientBuilder::new()
                 .default_headers(&[
-                    ("Authorization", format!("Bot {}", auth.0.as_ref()).as_str()),
+                    ("Authorization", format!("Bot {}", auth).as_str()),
                     ("Content-Type", "application/json"),
                 ])
                 .build()
@@ -58,13 +58,13 @@ impl Client {
         Ok(())
     }
 
-    pub async fn create_message(&self, channel_id: IdRef<'_>, content: &str) -> Result<()> {
+    pub async fn create_message(&self, channel_id: Id, content: &str) -> Result<()> {
         #[derive(Serialize)]
         struct CreateMessage<'a> {
             content: &'a str,
         }
         self.make_post_request(
-            &format!("/channels/{}/messages", channel_id.0),
+            &format!("/channels/{}/messages", channel_id),
             serde_json::to_string(&CreateMessage { content })
                 .expect("Cannot format message to create "),
         )
@@ -73,17 +73,12 @@ impl Client {
         Ok(())
     }
 
-    pub async fn create_reaction(
-        &self,
-        channel: IdRef<'_>,
-        message: IdRef<'_>,
-        emoji: &str,
-    ) -> Result<()> {
+    pub async fn create_reaction(&self, channel: Id, message: Id, emoji: &str) -> Result<()> {
         let encoded_emoji = url_encode(emoji);
 
         let endpoint = format!(
             "/channels/{}/messages/{}/reactions/{}/@me",
-            channel.0, message.0, encoded_emoji
+            channel, message, encoded_emoji
         );
         self.make_put_request(&dbg!(endpoint), String::default())
             .await?;

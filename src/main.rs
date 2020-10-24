@@ -10,6 +10,7 @@ use bot::types::*;
 use bot::Bot;
 use rand::Rng;
 use serde::Deserialize;
+use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{BufReader, Write};
 
@@ -20,7 +21,7 @@ pub mod strings;
 struct Handler<'a> {
     markov: &'a mut Markov,
     rng: rand::rngs::ThreadRng,
-    id: Option<IdBuf>,
+    id: Option<Id>,
     cfg: BotConfig,
 }
 
@@ -40,7 +41,7 @@ impl Handler<'_> {
         Ok(())
     }
 
-    async fn save(&self, client: &Client, channel: IdRef<'_>) -> Result<()> {
+    async fn save(&self, client: &Client, channel: Id) -> Result<()> {
         let result = save_markov(self.markov);
         let msg = match &result {
             Ok(s) => format!("Successfully saved ({})", file_size_to_string(*s)),
@@ -64,7 +65,7 @@ impl Handler<'_> {
         Ok(())
     }
 
-    async fn mimic(&mut self, client: &Client, channel: IdRef<'_>) -> Result<()> {
+    async fn mimic(&mut self, client: &Client, channel: Id) -> Result<()> {
         client
             .create_message(
                 channel,
@@ -92,12 +93,7 @@ impl Handler<'_> {
         }
     }
 
-    async fn what_follows(
-        &mut self,
-        client: &Client,
-        channel: IdRef<'_>,
-        word: &str,
-    ) -> Result<()> {
+    async fn what_follows(&mut self, client: &Client, channel: Id, word: &str) -> Result<()> {
         let follows = self.markov.what_follows(word);
         if follows.is_empty() {
             client.create_message(channel, "Nothing does!").await
@@ -114,7 +110,7 @@ impl Handler<'_> {
         }
     }
 
-    async fn what_starts(&mut self, client: &Client, channel: IdRef<'_>) -> Result<()> {
+    async fn what_starts(&mut self, client: &Client, channel: Id) -> Result<()> {
         let starts = self.markov.what_starts();
         if starts.is_empty() {
             client.create_message(channel, "Nothing does!").await
@@ -136,13 +132,12 @@ impl Handler<'_> {
             .insert_sequence(message.content.as_str().split_whitespace().filter_map(|s| {
                 if !s.is_empty() {
                     if let Some(id) = s.strip_prefix("<@!").and_then(|s| s.strip_suffix('>')) {
-                        let id = Id(id);
                         for user in &message.mentions {
-                            if user.id == id {
+                            if Ok(user.id) == id.parse() {
                                 return Some(format!("`{}#{}`", user.username, user.discriminator));
                             }
                         }
-                        Some(format!("`<@!{}>`", id.0))
+                        Some(format!("`<@!{}>`", id))
                     } else {
                         Some(String::from(s))
                     }
@@ -188,7 +183,7 @@ impl bot::AsyncDispatchHandler for Handler<'_> {
             match payload {
                 DispatchPayload::MessageCreate(message) => {
                     self.add_emojis(client, &message).await?;
-                    if self.id.as_ref().map(Id::as_ref) != Some(message.author.id) {
+                    if self.id != Some(message.author.id) {
                         self.handle_wot(client, &message).await?;
                         match message.content.as_str().trim() {
                             "eg!mimic" => self.mimic(client, message.channel_id).await?,
@@ -218,11 +213,9 @@ impl bot::AsyncDispatchHandler for Handler<'_> {
                     Ok(())
                 }
                 DispatchPayload::Ready(ready) => {
-                    self.id = Some(ready.user.id.into_owned());
-                    for chan in &self.cfg.announcement_channels {
-                        client
-                            .create_message(chan.as_ref(), "Dispenser goin' up!")
-                            .await?;
+                    self.id = Some(ready.user.id);
+                    for &chan in &self.cfg.announcement_channels {
+                        client.create_message(chan, "Dispenser goin' up!").await?;
                     }
                     Ok(())
                 }
@@ -236,9 +229,9 @@ impl bot::AsyncDispatchHandler for Handler<'_> {
 struct BotConfig {
     token: TokenBuf,
     intents: Intents,
-    admins: Vec<IdBuf>,
-    channel_blacklist: Vec<IdBuf>,
-    announcement_channels: Vec<IdBuf>,
+    admins: Vec<Id>,
+    channel_blacklist: Vec<Id>,
+    announcement_channels: Vec<Id>,
 }
 
 fn run(markov: &mut Markov) -> Result<()> {
