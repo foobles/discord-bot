@@ -1,5 +1,5 @@
 #![recursion_limit = "256"]
-//#![deny(warnings)]
+// #![deny(warnings)]
 
 use anyhow::Result;
 
@@ -10,7 +10,6 @@ use bot::types::*;
 use bot::Bot;
 use rand::Rng;
 use serde::Deserialize;
-use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{BufReader, Write};
 
@@ -127,6 +126,44 @@ impl Handler<'_> {
         }
     }
 
+    async fn learn_channel(
+        &mut self,
+        client: &Client,
+        return_channel: Id,
+        channel: Id,
+    ) -> Result<()> {
+        let mut oldest_id = None;
+        let mut oldest_ts = None;
+        let mut sum = 0;
+        loop {
+            let mut response = client
+                .get_channel_messages(channel, oldest_id.take())
+                .await?;
+            let rate_limit_end = response.rate_limit_end();
+            let messages = response.get_response().await?;
+
+            sum += messages.len();
+            for message in messages {
+                self.remember(&message);
+                if oldest_ts.map_or(true, |ts| message.timestamp < ts) {
+                    oldest_id = Some(message.id);
+                    oldest_ts = Some(message.timestamp);
+                }
+            }
+
+            if oldest_id.is_none() || sum > 2000 {
+                client
+                    .create_message(return_channel, &format!("learned from {} messages", sum))
+                    .await?;
+                break Ok(());
+            }
+
+            if let Some(time) = rate_limit_end {
+                async_io::Timer::at(time).await;
+            }
+        }
+    }
+
     fn remember(&mut self, message: &Message<'_>) {
         self.markov
             .insert_sequence(message.content.as_str().split_whitespace().filter_map(|s| {
@@ -192,10 +229,17 @@ impl bot::AsyncDispatchHandler for Handler<'_> {
                             "eg!starts" => self.what_starts(client, message.channel_id).await?,
                             "eg!clean" => self.clean(client, &message).await?,
                             s if s.starts_with("eg!follows ") => {
-                                self.what_follows(
+                                self.what_follows(client, message.channel_id, s[11..].trim())
+                                    .await?
+                            }
+                            s if s.starts_with("eg!learn ") => {
+                                self.learn_channel(
                                     client,
                                     message.channel_id,
-                                    message.content.as_str()[11..].trim(),
+                                    s[9..]
+                                        .trim_matches(|c: char| !c.is_numeric())
+                                        .parse()
+                                        .unwrap(),
                                 )
                                 .await?
                             }

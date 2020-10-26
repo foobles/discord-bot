@@ -1,4 +1,5 @@
 use crate::strings::StrCow;
+use chrono::{DateTime, Utc};
 use serde::{de::Error, Deserialize, Deserializer, Serialize};
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
@@ -92,6 +93,9 @@ pub struct Message<'a> {
     pub id: Id,
     pub channel_id: Id,
 
+    #[serde(deserialize_with = "deserialize_datetime_into_millis")]
+    pub timestamp: i64,
+
     #[serde(borrow)]
     pub author: User<'a>,
 
@@ -161,4 +165,11 @@ pub struct User<'a> {
     pub id: Id,
     pub username: &'a str, // might need Cow
     pub discriminator: &'a str,
+}
+
+fn deserialize_datetime_into_millis<'de, D>(deserializer: D) -> Result<i64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    DateTime::<Utc>::deserialize(deserializer).map(|dt| dt.timestamp_millis())
 }

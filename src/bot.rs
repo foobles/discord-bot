@@ -1,7 +1,7 @@
 use std::net::TcpStream;
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, ensure, Result};
 use async_io::{Async, Timer};
 use async_tungstenite::{tungstenite::Message, WebSocketStream};
 use futures::{future::FusedFuture, prelude::*, select};
@@ -69,6 +69,7 @@ impl Bot {
             .client
             .make_get_request::<BotGateway>("gateway/bot")
             .await?
+            .get_response_owned()?
             .url;
 
         let gateway_request = Url::parse_with_params(
@@ -178,6 +179,11 @@ impl Bot {
                 Ok(Event::Reconnect) => {
                     println!("disconnecting (reconnect received)");
                     self.disconnect(ws).await?;
+                }
+                Ok(Event::InvalidSession(reconnect)) => {
+                    ensure!(reconnect, "Invalid session with false payload");
+                    println!("disconnecting (invalid session, expected reconnect)");
+                    self.disconnect(ws).await?
                 }
                 Err(e) => eprintln!("{}", e),
                 _ => (),

@@ -10,6 +10,7 @@ edition = "2018"
 
 isahc = { version = "0.9.10", features = ["json"] }
 url = "2.1.1"
+http = "0.2.1"
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["raw_value"] }
@@ -17,6 +18,7 @@ bincode = "1.3"
 
 anyhow = "1.0"
 rand = "0.7"
+chrono = { version = "0.4", features = ["serde"] }
 
 async-io = "1.1.9"
 futures = "0.3.5"
