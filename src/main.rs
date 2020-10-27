@@ -92,38 +92,20 @@ impl Handler<'_> {
         }
     }
 
-    async fn what_follows(&mut self, client: &Client, channel: Id, word: &str) -> Result<()> {
-        let follows = self.markov.what_follows(word);
-        if follows.is_empty() {
-            client.create_message(channel, "Nothing does!").await
+    async fn create_list_message(
+        &mut self,
+        client: &Client,
+        channel: Id,
+        iter: impl IntoIterator<Item = impl ToString>,
+    ) -> Result<()> {
+        let mut iter = iter.into_iter().peekable();
+        let string = if iter.peek().is_none() {
+            String::from("Nothing!")
         } else {
-            client
-                .create_message(
-                    channel,
-                    follows
-                        .into_iter()
-                        .fold(String::new(), |p, c| p + &c + "\n")
-                        .as_str(),
-                )
-                .await
-        }
-    }
+            iter.fold(String::new(), |p, c| p + &c.to_string() + " ")
+        };
 
-    async fn what_starts(&mut self, client: &Client, channel: Id) -> Result<()> {
-        let starts = self.markov.what_starts();
-        if starts.is_empty() {
-            client.create_message(channel, "Nothing does!").await
-        } else {
-            client
-                .create_message(
-                    channel,
-                    starts
-                        .into_iter()
-                        .fold(String::new(), |p, c| p + &c + "\n")
-                        .as_str(),
-                )
-                .await
-        }
+        client.create_message(channel, &string).await
     }
 
     async fn learn_channel(
@@ -226,11 +208,22 @@ impl bot::AsyncDispatchHandler for Handler<'_> {
                             "eg!mimic" => self.mimic(client, message.channel_id).await?,
                             "eg!save" => self.save(client, message.channel_id).await?,
                             "eg!debug" => eprintln!("{:#?}", self.markov),
-                            "eg!starts" => self.what_starts(client, message.channel_id).await?,
+                            "eg!starts" => {
+                                self.create_list_message(
+                                    client,
+                                    message.channel_id,
+                                    self.markov.what_starts(),
+                                )
+                                .await?
+                            }
                             "eg!clean" => self.clean(client, &message).await?,
                             s if s.starts_with("eg!follows ") => {
-                                self.what_follows(client, message.channel_id, s[11..].trim())
-                                    .await?
+                                self.create_list_message(
+                                    client,
+                                    message.channel_id,
+                                    self.markov.what_follows(s[11..].trim()),
+                                )
+                                .await?
                             }
                             s if s.starts_with("eg!learn ") => {
                                 self.learn_channel(
