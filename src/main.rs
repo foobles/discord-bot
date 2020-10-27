@@ -1,5 +1,5 @@
 #![recursion_limit = "256"]
-// #![deny(warnings)]
+#![deny(warnings)]
 
 use anyhow::Result;
 
@@ -25,6 +25,65 @@ struct Handler<'a> {
 }
 
 impl Handler<'_> {
+    async fn handle_message(&mut self, client: &Client, message: &Message<'_>) -> Result<()> {
+        let (cmd, args) = match message.content.as_str().strip_prefix("eg!").and_then(|s| {
+            let mut args = s.split_whitespace().filter(|a| !a.is_empty());
+            args.next().map(|cmd| (cmd, args))
+        }) {
+            Some(p) => p,
+            _ => return Ok(()),
+        };
+
+        macro_rules! match_command {
+            (
+                ($cmd:expr, $args:expr) {
+                    $( $name:literal ($($param:pat),*) => $result:expr )*
+                }
+            ) => {{
+                let mut args = $args;
+                match (cmd) {
+                    $(
+                        $name => {
+                            $(
+                                let $param: &str = match Iterator::next(&mut args) {
+                                    Some(p) => p,
+                                    _ => ::anyhow::bail!("expected `{}` but none was provided", stringify!($param)),
+                                };
+                            )*
+                            $result
+                        }
+                    )*
+                    _ => ()
+                }
+            }}
+        }
+
+        match_command! {
+            (cmd, args) {
+                "mimic"() => self.mimic(client, message.channel_id).await?
+                "follows"(word) => {
+                    println!("{}", word);
+                    self.create_list_message(client, message.channel_id, self.markov.what_follows(word)).await?;
+                }
+                "starts"() => {
+                    self.create_list_message(client, message.channel_id, self.markov.what_starts()).await?;
+                }
+                "save"() => self.save(client, message.channel_id).await?
+                "clean"() => self.clean(client, message).await?
+                "learn"(channel, max) => {
+                    let max = match max.to_lowercase().as_str() {
+                        "full" => None,
+                        s => Some(s.parse()?)
+                    };
+                    let learn_channel_id = channel.trim_start_matches("<#").trim_end_matches(">").parse()?;
+                    self.learn_channel(client, message.channel_id, learn_channel_id, max).await?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     async fn add_emojis(&mut self, client: &Client, message: &Message<'_>) -> Result<()> {
         let mut emoji = None;
         if self.rng.gen_ratio(1, 50) {
@@ -113,6 +172,7 @@ impl Handler<'_> {
         client: &Client,
         return_channel: Id,
         channel: Id,
+        max: Option<usize>,
     ) -> Result<()> {
         let mut oldest_id = None;
         let mut oldest_ts = None;
@@ -133,7 +193,7 @@ impl Handler<'_> {
                 }
             }
 
-            if oldest_id.is_none() || sum > 2000 {
+            if oldest_id.is_none() || max.map(|m| sum >= m).unwrap_or(false) {
                 client
                     .create_message(return_channel, &format!("learned from {} messages", sum))
                     .await?;
@@ -204,47 +264,14 @@ impl bot::AsyncDispatchHandler for Handler<'_> {
                     self.add_emojis(client, &message).await?;
                     if self.id != Some(message.author.id) {
                         self.handle_wot(client, &message).await?;
-                        match message.content.as_str().trim() {
-                            "eg!mimic" => self.mimic(client, message.channel_id).await?,
-                            "eg!save" => self.save(client, message.channel_id).await?,
-                            "eg!debug" => eprintln!("{:#?}", self.markov),
-                            "eg!starts" => {
-                                self.create_list_message(
-                                    client,
-                                    message.channel_id,
-                                    self.markov.what_starts(),
-                                )
-                                .await?
-                            }
-                            "eg!clean" => self.clean(client, &message).await?,
-                            s if s.starts_with("eg!follows ") => {
-                                self.create_list_message(
-                                    client,
-                                    message.channel_id,
-                                    self.markov.what_follows(s[11..].trim()),
-                                )
-                                .await?
-                            }
-                            s if s.starts_with("eg!learn ") => {
-                                self.learn_channel(
-                                    client,
-                                    message.channel_id,
-                                    s[9..]
-                                        .trim_matches(|c: char| !c.is_numeric())
-                                        .parse()
-                                        .unwrap(),
-                                )
-                                .await?
-                            }
-                            _ if !self
-                                .cfg
-                                .channel_blacklist
-                                .iter()
-                                .any(|c| *c == message.channel_id) =>
-                            {
-                                self.remember(&message);
-                            }
-                            _ => (),
+                        self.handle_message(client, &message).await?;
+                        if !self
+                            .cfg
+                            .channel_blacklist
+                            .iter()
+                            .any(|&bc| bc == message.channel_id)
+                        {
+                            self.remember(&message);
                         }
                     }
                     Ok(())
