@@ -207,8 +207,11 @@ impl Handler<'_> {
     }
 
     fn remember(&mut self, message: &Message<'_>) {
-        self.markov
-            .insert_sequence(message.content.as_str().split_whitespace().filter_map(|s| {
+        let words: Vec<_> = message
+            .content
+            .as_str()
+            .split_whitespace()
+            .filter_map(|s| {
                 if !s.is_empty() {
                     if let Some(id) = s.strip_prefix("<@!").and_then(|s| s.strip_suffix('>')) {
                         for user in &message.mentions {
@@ -223,7 +226,11 @@ impl Handler<'_> {
                 } else {
                     None
                 }
-            }))
+            })
+            .collect();
+        if words.len() >= 3 {
+            self.markov.insert_sequence(words);
+        }
     }
 
     fn is_admin_message(&self, message: &Message<'_>) -> bool {
