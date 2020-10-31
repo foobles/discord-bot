@@ -123,6 +123,15 @@ impl Handler<'_> {
         Ok(())
     }
 
+    async fn engineer_gaming(&mut self, client: &Client, message: &Message<'_>) -> Result<()> {
+        if message.content.as_str().trim().to_ascii_lowercase() == "engineer gaming" {
+            client
+                .create_message(message.channel_id, "https://youtu.be/DGdfzM780KY")
+                .await?;
+        }
+        Ok(())
+    }
+
     async fn mimic(&mut self, client: &Client, channel: Id) -> Result<()> {
         client
             .create_message(
@@ -271,6 +280,7 @@ impl bot::AsyncDispatchHandler for Handler<'_> {
                     self.add_emojis(client, &message).await?;
                     if self.id != Some(message.author.id) {
                         self.handle_wot(client, &message).await?;
+                        self.engineer_gaming(client, &message).await?;
                         self.handle_message(client, &message).await?;
                         if !self
                             .cfg
